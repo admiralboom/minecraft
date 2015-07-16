@@ -1,0 +1,62 @@
+---
+- name: Create a Rackspace Cloud Server
+  hosts: localhost
+  user: root
+  connection: local
+  gather_facts: True
+
+  vars:
+   - name: mc-n02.nathancblack.com
+   - flavor: performance1-2
+   - image: f211a88e-4cc0-4660-bda1-56495b05cda2
+   - region: IAD
+   - credentials: .rackspace_cloud
+   - domain: nathancblack.com
+   - files:
+        /root/.ssh/authorized_keys: /home/nb/.ssh/turbo.key.pub
+
+  tasks:
+    - name: Rackspace cloud server build request
+      local_action:
+        module: rax
+        credentials: "{{ credentials }}"
+        name: "{{ name }}"
+        flavor: "{{ flavor }}"
+        image: "{{ image }}"
+        region: "{{ region }}"
+        files: "{{ files }}"
+        wait: yes
+        state: present
+        networks:
+          - private
+          - public
+      register: rax
+    - name: Add new cloud server to host group
+      local_action:
+        module: add_host
+        hostname: "{{ item.name }}"
+        ansible_ssh_host: "{{ item.rax_accessipv4 }}"
+        ansible_ssh_user: root
+        groupname: deploy
+      with_items: rax.instances
+    - name: DNS - Create A record
+      local_action:
+        module: rax_dns_record
+        credentials: "{{ credentials }}"
+        domain: "{{ domain }}"
+        name: "{{ name }}"
+        data: "{{ item.rax_accessipv4 }}"
+        type: A
+      with_items: rax.instances
+      register: a_record
+    - name: DNS - Create PTR record
+      local_action:
+        module: rax_dns_record
+        credentials: "{{ credentials }}"
+        server: "{{ item.id }}"
+        name: "{{ name }}"
+        region: "{{ region }}"
+        data: "{{ item.rax_accessipv4 }}"
+        type: PTR 
+      with_items: rax.instances
+      register: ptr_record
